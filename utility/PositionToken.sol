@@ -23,9 +23,35 @@ contract PositionToken is
 
     uint256[] private positionIds;
 
+    uint256 public longPositionCounter;
+    uint256 public shortPositionCounter;
+
+    uint256 public sumOfLongPricePool;
+    uint256 public sumOfShortPricePool;
+
+    uint256 public currentLongPrice;
+    uint256 public currentShortPrice;
+
+    uint256 private totalLengthCycle;
+
+    uint256 startTime;
+
+    struct longPricePosition {
+        uint256 position;
+        uint256 price;
+    }
+
+    struct shortPricePosition {
+        uint256 position;
+        uint256 price;
+    }
+
     mapping(address => uint256) public postionBalForLong;
     mapping(address => uint256) public positionBalForShort;
     mapping(address => uint256) public positionBalance;
+
+    mapping(uint256 => longPricePosition) public positionToLongPrice;
+    mapping(uint256 => shortPricePosition) public positionToShortPrice;
 
     modifier checkBalance(uint256 amount) {
         require(
@@ -49,6 +75,16 @@ contract PositionToken is
         )
     {
         positionIds = [longPosition, shortPosition];
+        sumOfLongPricePool = 1;
+        sumOfShortPricePool = 1;
+        longPositionCounter = 0;
+        shortPositionCounter = 0;
+        currentLongPrice = 1000000000000000 wei; //0.001 ether;
+        currentShortPrice = 1000000000000000 wei;
+        totalLengthCycle = 1440 minutes;
+        startTime = block.timestamp;
+        positionToLongPrice[1] = longPricePosition(1, currentLongPrice);
+        positionToShortPrice[1] = shortPricePosition(1, currentShortPrice);
     }
 
     function pause() public onlyOwner {
@@ -62,13 +98,26 @@ contract PositionToken is
     function getLongPostion(
         address _to,
         uint256 amount,
-        address stockAddress
+        address payable stockAddress
     ) public payable {
-        // require(msg.value ==tokenPrice, "User must pay for the token" );
+        if (longPositionCounter < 0) {
+            require(
+                msg.value >= checkReq(true),
+                "You must pay the token price"
+            );
+        } else {
+            require(
+                msg.value == 1000000000000000,
+                "You must pay the token price"
+            );
+        }
         postionBalForLong[_to] += amount;
         positionBalance[_to] += amount;
+        longPositionCounter++;
+        
         _mint(_to, 0, amount, "");
         setApprovalForAll(stockAddress, true);
+        stockAddress.transfer(msg.value);
     }
 
     function getShortPosition(
@@ -76,13 +125,27 @@ contract PositionToken is
         uint256 amount,
         address stockAddress
     ) public payable {
-        // require(msg.value ==tokenPrice, "User must pay for the token" );
+        if (shortPositionCounter < 0) {
+            require(
+                msg.value >= checkReq(false),
+                "You must pay the token price"
+            );
+        }
+        else {
+            require(
+                msg.value == 1000000000000000,
+                "You must pay the token price"
+            );
+        }
         positionBalForShort[_to] += amount;
         positionBalance[_to] += amount;
+        shortPositionCounter++;
+        
         _mint(_to, 1, amount, "");
         setApprovalForAll(stockAddress, true);
+        payable(stockAddress).transfer(currentShortPrice);
+        
     }
-
 
     function getRewardNftOne()
         public
@@ -108,12 +171,12 @@ contract PositionToken is
         _mint(msg.sender, 4, 1, "");
     }
 
-    function burnLong(address holder,uint256 amount)public{
-        burn(holder,0,amount);
+    function burnLong(address holder, uint256 amount) public {
+        burn(holder, 0, amount);
     }
 
-    function burnShort(address holder,uint256 amount)public {
-        burn(holder,1,amount);
+    function burnShort(address holder, uint256 amount) public {
+        burn(holder, 1, amount);
     }
 
     function uri(uint256 _id)
@@ -139,5 +202,87 @@ contract PositionToken is
         bytes memory data
     ) internal override(ERC1155, ERC1155Supply) whenNotPaused {
         super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
+    }
+
+    function getSummation(
+        bool isLong,
+        uint256 position,
+        uint256 positionPrice
+    ) public returns (uint256) {
+        uint256 sum = 0;
+        sum += (position * positionPrice);
+        if (isLong == true) {
+            return sumOfLongPricePool += sum;
+        } else {
+            return sumOfShortPricePool += sum;
+        }
+    }
+
+    function getTimePassed() internal view returns (uint256) {
+        return (block.timestamp - startTime) / 60;
+    }
+
+    function getPriceNumerator(
+        bool isLong,
+        uint256 position,
+        uint256 price
+    ) internal returns (uint256) {
+        return
+            getSummation(isLong, position, price) *
+            (totalLengthCycle - getTimePassed()) *
+            price;
+    }
+
+    function getDenominator(
+        bool isLong,
+        uint256 position,
+        uint256 price
+    ) internal returns (uint256) {
+        return getSummation(isLong, position, price) * totalLengthCycle;
+    }
+
+    function checkReq(bool isLong) public returns (uint256 price) {
+        uint256 tokenPrice;
+        uint256 position;
+        if (isLong == true) {
+            tokenPrice = getTokenPrice(true);
+            currentLongPrice = tokenPrice;
+            position = longPositionCounter + 1;
+            positionToLongPrice[position] = longPricePosition(
+                position,
+                tokenPrice
+            );
+        } else {
+            tokenPrice = getTokenPrice(false);
+            currentShortPrice = tokenPrice;
+            position = shortPositionCounter + 1;
+            positionToShortPrice[position] = shortPricePosition(
+                position,
+                tokenPrice
+            );
+        }
+        return tokenPrice;
+    }
+
+    function getTokenPrice(bool isLong) public returns (uint256) {
+        require(
+            longPositionCounter > 0 || shortPositionCounter > 0,
+            "Position should gether than 0"
+        );
+        uint256 tokenPrice;
+        if (isLong == true && longPositionCounter > 0) {
+            tokenPrice =
+                getPriceNumerator(true, longPositionCounter, currentLongPrice) /
+                getDenominator(false, shortPositionCounter, currentShortPrice);
+        } else if (isLong == false && shortPositionCounter > 0) {
+            tokenPrice =
+                getPriceNumerator(
+                    false,
+                    shortPositionCounter,
+                    currentShortPrice
+                ) /
+                getDenominator(true, longPositionCounter, currentLongPrice);
+        }
+        return tokenPrice;
     }
 }
