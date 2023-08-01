@@ -87,6 +87,12 @@ contract PositionToken is
         positionToShortPrice[1] = shortPricePosition(1, currentShortPrice);
     }
 
+    event LongToken(address minter,address forStock,uint256 amount,uint256 position, uint256 price);
+
+    event ShortToken(address minter,address forStock,uint256 amount,uint256 position, uint256 price);
+
+    event ObtainedNFT(address rewardReceiver,uint milestone);
+
     function pause() public onlyOwner {
         _pause();
     }
@@ -100,14 +106,17 @@ contract PositionToken is
         uint256 amount,
         address payable stockAddress
     ) public payable {
+         uint256 tokenPrice;
         if (longPositionCounter < 0) {
+            tokenPrice = checkReq(true);
             require(
-                msg.value >= checkReq(true),
+                msg.value == tokenPrice,
                 "You must pay the token price"
             );
         } else {
+            tokenPrice = currentLongPrice;
             require(
-                msg.value == 1000000000000000,
+                msg.value == tokenPrice,
                 "You must pay the token price"
             );
         }
@@ -117,7 +126,8 @@ contract PositionToken is
         
         _mint(_to, 0, amount, "");
         setApprovalForAll(stockAddress, true);
-        stockAddress.transfer(msg.value);
+        payable(stockAddress).transfer(tokenPrice);
+        emit LongToken(msg.sender,stockAddress,amount,longPositionCounter,currentLongPrice);
     }
 
     function getShortPosition(
@@ -125,15 +135,18 @@ contract PositionToken is
         uint256 amount,
         address stockAddress
     ) public payable {
+        uint256 tokenPrice;
         if (shortPositionCounter < 0) {
+            tokenPrice = checkReq(false);
             require(
-                msg.value >= checkReq(false),
+                msg.value == tokenPrice,
                 "You must pay the token price"
             );
         }
         else {
+            tokenPrice = currentShortPrice;
             require(
-                msg.value == 1000000000000000,
+                msg.value == tokenPrice,
                 "You must pay the token price"
             );
         }
@@ -143,8 +156,8 @@ contract PositionToken is
         
         _mint(_to, 1, amount, "");
         setApprovalForAll(stockAddress, true);
-        payable(stockAddress).transfer(currentShortPrice);
-        
+        payable(stockAddress).transfer(tokenPrice);
+        emit ShortToken(msg.sender,stockAddress,amount,shortPositionCounter,currentShortPrice);
     }
 
     function getRewardNftOne()
@@ -153,6 +166,7 @@ contract PositionToken is
         shouldHaveOnlyOne(nftFor1000Position)
     {
         _mint(msg.sender, 2, 1, "");
+        emit ObtainedNFT(msg.sender,1000);
     }
 
     function getRewardNftTwo()
@@ -161,6 +175,7 @@ contract PositionToken is
         shouldHaveOnlyOne(nftFor3000Position)
     {
         _mint(msg.sender, 3, 1, "");
+        emit ObtainedNFT(msg.sender,3000);
     }
 
     function getRewardNftThree()
@@ -169,6 +184,7 @@ contract PositionToken is
         shouldHaveOnlyOne(nftFor5000Position)
     {
         _mint(msg.sender, 4, 1, "");
+        emit ObtainedNFT(msg.sender,5000);
     }
 
     function burnLong(address holder, uint256 amount) public {
@@ -208,7 +224,7 @@ contract PositionToken is
         bool isLong,
         uint256 position,
         uint256 positionPrice
-    ) public returns (uint256) {
+    ) internal returns (uint256) {
         uint256 sum = 0;
         sum += (position * positionPrice);
         if (isLong == true) {
@@ -264,7 +280,7 @@ contract PositionToken is
         return tokenPrice;
     }
 
-    function getTokenPrice(bool isLong) public returns (uint256) {
+    function getTokenPrice(bool isLong) internal returns (uint256) {
         require(
             longPositionCounter > 0 || shortPositionCounter > 0,
             "Position should gether than 0"

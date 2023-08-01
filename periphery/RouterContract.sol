@@ -19,8 +19,6 @@ contract RouterForetell is ForetellFactory{
         BaseInterface(StockContracts[stockId]).openShortPostion(amount);
     }
 
-    function endProcess(uint16 stockId) public {
-        BaseInterface(StockContracts[stockId]).endProcess();
-    }
+   
 
 }

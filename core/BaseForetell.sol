@@ -4,7 +4,6 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import "./PositionInterface.sol";
-import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 
 contract BaseForetell is ERC1155Holder {
@@ -84,6 +83,12 @@ contract BaseForetell is ERC1155Holder {
         tokenAddress = _tokenAddress;
     }
 
+    event longPosition(address participants,bool isLong,uint amount,uint16 stockId,uint256 predictionId);
+
+    event shortPosition(address participants,bool isLong,uint amount,uint16 stockId,uint256 predictionId);
+
+    event RewardCollection(address collector,uint256 amount,uint256 predictionId,bool isLong);
+
     function openLongPostion(uint256 amount) external haveEnoughToken(0,amount) returns(uint256){
         predictionCounter.increment();
         uint256 predictionId = predictionCounter.current();
@@ -111,7 +116,9 @@ contract BaseForetell is ERC1155Holder {
             amount,
             ""
         );
+        emit longPosition(msg.sender,true,amount,stock.stockId,predictionId);
         return predictionId;
+        
     }
 
     function openShortPostion(uint256 amount) external haveEnoughToken(1,amount) returns(uint256) {
@@ -141,10 +148,11 @@ contract BaseForetell is ERC1155Holder {
             amount,
             ""
         );
+        emit shortPosition(msg.sender,false,amount,stock.stockId,predictionId);
         return predictionId;
     }
 
-    function calculateReward() public view returns(uint256 rewardEarned) {
+    function calculateReward() internal view returns(uint256 rewardEarned) {
         uint reward;
         if(userTrack[msg.sender].isLong == true){
             reward = (position.shortPool/position.stakedLong) * userTrack[msg.sender].userStake;
@@ -161,7 +169,7 @@ contract BaseForetell is ERC1155Holder {
         position = Postion(0,0,0,0,0,0,0,0,0);
     }
 
-    function updateChange(bool isRaised) public {
+    function updateChange(bool isRaised) external {
         if (isRaised == true){
             Change = State.Rise;
         } 
@@ -171,7 +179,7 @@ contract BaseForetell is ERC1155Holder {
         
     }
 
-    function checkEligibity(address userAddress)public returns(bool) {
+    function checkEligibity(address userAddress)internal returns(bool) {
         UserTrack memory user = userTrack[userAddress];
         uint256 predictionId = user.predictionId;
         bool isEligible;
@@ -192,6 +200,23 @@ contract BaseForetell is ERC1155Holder {
         require(checkEligibity(msg.sender) == true,"Sorry, you are not Eligible for Reward");
         Prediction memory prediction = Predictions[predictionId];
         require(prediction.isPredictionCorrect == true);
+        UserTrack memory user = userTrack[msg.sender];
+        user.predictionId = 0;
+        user.isLong = false;
+        user.userStake = 0;
+        uint reward = calculateReward();
+        payable(msg.sender).transfer(reward);
+        emit RewardCollection(msg.sender,reward,predictionId,user.isLong);
+    }
+
+    receive() external payable {
+        if( userTrack[msg.sender].isLong == true){
+            position.longPool += msg.value;
+            position.totalPool += msg.value;
+        } else {
+            position.shortPool += msg.value;
+            position.totalPool += msg.value;
+        }
     }
 
 }

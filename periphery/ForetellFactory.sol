@@ -12,19 +12,18 @@ contract ForetellFactory is OracleClosingPrice {
 
     mapping(uint16 => address) public StockContracts;
 
-   constructor(address _tokenAddress) {
+    constructor(address _tokenAddress) {
        tokenAddress = _tokenAddress;
-   }
+    }
 
     function getOpening(uint16 _stockId) internal view returns(uint256){
         return OracleClosingPrice.getPrice(_stockId);
     }
 
 
-    function addStuck(uint16 _stockId,string memory _stockName) public {
+    function addStock(uint16 _stockId,string memory _stockName) public {
         BaseForetell newContract = new BaseForetell(_stockId,_stockName,getOpening(_stockId),tokenAddress);
         StockContracts[_stockId] = address(newContract);
         emit StockDeployed(address(newContract), _stockId);
-
     }
 }

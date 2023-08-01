@@ -7,5 +7,7 @@ interface BaseInterface{
 
     function openShortPostion(uint amount) external;
 
+    function updateChange(bool isRaised) external ;
+
     function endProcess() external ;
 }
